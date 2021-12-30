@@ -1,0 +1,490 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+homes_training_set :
+
+This data set is a sample of home sales in some US city:
+
+This dataset is your "training data," meaning this is the data you will feed into your OLS and Machine Learning models throughout the pset.
+ 
+
+homes_test_set_1:
+
+This dataset is meant to be similar in nature to homes_training_set. The training set is meant to be representative of the homes you will find in this test set. This dataset will be used for you to make out of sample predictions. Thus, the sale price is not included. That is what you will be predicting yourself.
+
+ 
+This is your "test set," meaning this is the data that your models, made using homes_training_set, will make predictions on. 
+
+ 
+
+homes_test_set_2:
+
+This testing dataset contains a set of homes that are, to some extent, fundamentally different from the homes in the training set and the first test set.  You will make out of sample predictions on this data set as well, thus no sales price is included. 
+
+ 
+
+Questions:
+
+ 
+
+Note: All answer submissions should be contained in one of two .csv files. 
+
+The first .csv should be called [your last name here]_test_set_1_predictions.csv. This .csv will consist of three columns: "id", "regression_pred", "ml_pred" which are your , ML and regression predictions for a particular id which you will be generating in question 1 and question 2.
+
+The second .csv should be called [your last name here]_test_set_2_predictions.csv. It should consist of two columns: "id" and "pred". "pred" will be the predictions you generate in question 3. 
+
+ 
+
+As a note, for any and all of the following predictions, feel free to do any cleaning, data manipulation, or column creation that you see fit. Your score will largely be determined by your empirical accuracy, so do whatever you think is best. Explore anything you think could improve your accuracy!
+ 
+
+1. Build an OLS model on your cleaned version of homes_training_set. And then, making whatever adjustments you deem appropriate, provide your best prediction of the sales price for each house in homes_test_set_1. Describe your thought process and modeling choices.
+
+ 
+
+2. Build some machine learning model on your cleaned version of homes_training_set.  (Eric will be teaching both what a random forest is and how to use it in section this week. However, feel free to use any other method if you prefer.) And then, making whatever adjustments you see fit, provide your best prediction of the sales price for each house in homes_test_set_1. Describe your thought process and modeling choices. 
+
+
+3. Using whatever modeling approach and whatever adjustments you deem appropriate, provide your best prediction of the sales price in homes_test_set_2.  Describe your thought process and modeling choices. NOTE: you have to be thoughtful here!! 
+(Answer submissions should be contained in your .csv file with the first column being "parcel_number", the second being "sale_date", the third being "sale_price", and the fourth being "question_3".)
+
+
+
+
+
+## Setup 
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+training_set <- read_csv("training_set_revised.csv")
+head(training_set)
+```
+```{r}
+set.seed(33) 
+```
+
+```{r}
+training_set$order <- sample(nrow(training_set))
+training_set <- training_set %>% arrange(order)
+head(training_set)
+```
+
+
+### OLS regression 
+
+```{r}
+regression <- lm(price~price+beds+baths+living_area_sqft+lot_sqft+floors+has_waterfront_view+rating_of_view+unit_condition+construction_and_design_grade+floors_above_ground_level_sqft+basement_sqft+construction_year+most_recent_renovation+avg_living_area_sqft_of_nearby_neighborhoods+avg_lot_sqft_of_nearby_neighborhoods, data = training_set)
+summary(regression)
+```
+
+
+```{r}
+training_set_results <-
+  training_set %>% 
+  select(id, price)
+
+training_set_results$ols_predicted_price <- 
+  predict(regression, training_set)
+
+head(training_set_results)
+
+
+```
+
+
+```{r}
+
+adj_training_set_results <- training_set_results %>% mutate(ols_predicted_price = case_when(
+    `price` > 2000000 ~ ols_predicted_price*1.8,
+    `price` > 1500000 ~ ols_predicted_price*1.5,
+    `price` > 1000000 ~ ols_predicted_price*1.3,
+    `price` < 1000000 ~ ols_predicted_price))
+
+adj_training_set_results %>% 
+  ggplot(aes(price, ols_predicted_price)) +
+  geom_point() +
+  geom_abline(slope = 1)
+
+
+```
+
+
+```{r}
+
+ols_adj_training_set_results <- training_set_results %>% mutate(adjusted_ols = case_when(
+    `ols_predicted_price` > 1700000 ~ ols_predicted_price*1.4,
+    `ols_predicted_price` > 1500000 ~ ols_predicted_price*1.2,
+    `ols_predicted_price` > 1300000 ~ ols_predicted_price*1.05,
+    `ols_predicted_price` > 1150000 ~ ols_predicted_price*.99,
+    `ols_predicted_price` > 1000000 ~ ols_predicted_price*.98,
+    `ols_predicted_price` > 900000 ~ ols_predicted_price*.92,
+    `ols_predicted_price` < 0 ~ 200000,
+    `ols_predicted_price` < 200000 ~ ols_predicted_price*1.5,
+    `ols_predicted_price` < 500000 ~ ols_predicted_price*.90,
+    `ols_predicted_price` < 900000 ~ ols_predicted_price))
+ols_adj_training_set_results
+
+
+ols_adj_training_set_results %>% 
+  ggplot(aes(price, ols_predicted_price)) +
+  geom_point() +
+  geom_abline(slope = 1, color = "red")
+
+ols_adj_training_set_results %>% 
+  ggplot(aes(price, adjusted_ols)) +
+  geom_point() +
+  geom_abline(slope = 1, color = "red")
+
+ols_adj_training_set_results 
+ols_adj_training_set_results <- ols_adj_training_set_results %>% mutate(adj_ols_price_diff_prop = abs((adjusted_ols - price)/price))
+ols_adj_training_set_results <- ols_adj_training_set_results %>% mutate(ols_price_diff_prop =  abs((ols_predicted_price - price)/price))
+head(ols_adj_training_set_results)
+
+mean(ols_adj_training_set_results$ols_price_diff_prop) - mean(ols_adj_training_set_results$adj_ols_price_diff_prop)
+
+
+
+```
+
+
+
+
+
+```{r}
+library(randomForest)
+```
+
+#```{r}
+rf_model <- randomForest(price~ baths + lot_sqft + has_waterfront_view + unit_condition + floors_above_ground_level_sqft + construction_year + avg_living_area_sqft_of_nearby_neighborhoods + beds + living_area_sqft + living_area_sqft + floors + rating_of_view + construction_and_design_grade + basement_sqft +most_recent_renovation +avg_lot_sqft_of_nearby_neighborhoods, data = training_set, mtry = 4, ntrees = 200, importance = TRUE)
+```
+
+
+
+
+
+```{r}
+training_set_results$rf_predicted_price <- predict(rf_model, training_set)
+head(training_set_results)
+```
+
+```{r}
+rf_adj_training_set_results <- training_set_results %>% mutate(adjusted_rf = case_when(
+    `rf_predicted_price` > 2750000 ~ rf_predicted_price*1.2,
+    `rf_predicted_price` > 2300000 ~ rf_predicted_price*1.12,
+    `rf_predicted_price` > 2000000 ~ rf_predicted_price*1.1,
+    `rf_predicted_price` > 1500000 ~ rf_predicted_price*1.08,
+    `rf_predicted_price` > 1300000 ~ rf_predicted_price*1.06,
+    `rf_predicted_price` > 1100000 ~ rf_predicted_price*1.06,
+    `rf_predicted_price` > 9000000 ~ rf_predicted_price*1,
+    `rf_predicted_price` < 200000 ~ rf_predicted_price*.87,
+    `rf_predicted_price` < 300000 ~ rf_predicted_price*.93,
+    `rf_predicted_price` < 500000 ~ rf_predicted_price*.95,
+    `rf_predicted_price` < 9000000 ~ rf_predicted_price))
+rf_adj_training_set_results
+
+```
+
+
+```{r}
+training_set_results %>% 
+  ggplot(aes(price, rf_predicted_price)) +
+  geom_point() +
+  geom_abline(slope = 1, color = "red")
+
+rf_adj_training_set_results %>% 
+  ggplot(aes(price, adjusted_rf)) +
+  geom_point() +
+  geom_abline(slope = 1, color = "red")
+```
+
+
+```{r}
+rf_adj_training_set_results <- rf_adj_training_set_results %>% mutate(adj_rf_price_diff_prop = abs((adjusted_rf - price)/price))
+rf_adj_training_set_results <- rf_adj_training_set_results %>% mutate(rf_price_diff_prop =  abs((rf_predicted_price - price)/price))
+
+mean(rf_adj_training_set_results$rf_price_diff_prop) - mean(rf_adj_training_set_results$adj_rf_price_diff_prop)
+
+
+```
+
+```{r}
+rf_adj_training_set_results
+```
+```{r}
+comb_training_adj <- rf_adj_training_set_results %>% mutate(adjusted_ols = case_when(
+    `ols_predicted_price` > 1700000 ~ ols_predicted_price*1.4,
+    `ols_predicted_price` > 1500000 ~ ols_predicted_price*1.2,
+    `ols_predicted_price` > 1300000 ~ ols_predicted_price*1.05,
+    `ols_predicted_price` > 1150000 ~ ols_predicted_price*.99,
+    `ols_predicted_price` > 1000000 ~ ols_predicted_price*.98,
+    `ols_predicted_price` > 900000 ~ ols_predicted_price*.92,
+    `ols_predicted_price` < 0 ~ 200000,
+    `ols_predicted_price` < 200000 ~ ols_predicted_price*1.5,
+    `ols_predicted_price` < 500000 ~ ols_predicted_price*.90,
+    `ols_predicted_price` < 900000 ~ ols_predicted_price))
+comb_training_adj
+```
+
+
+
+```{r}
+comb_training_adj <-
+  comb_training_adj %>% 
+  mutate(
+    ols_se = abs(ols_predicted_price - price)^2,
+    rf_se = abs(rf_predicted_price - price)^2,
+    adj_ols_se = abs(adjusted_ols - price)^2,
+    adj_rf_se = abs(adjusted_rf - price)^2)
+comb_training_adj
+
+mean(comb_training_adj$ols_se)
+mean(comb_training_adj$rf_se)
+mean(comb_training_adj$adj_ols_se)
+mean(comb_training_adj$adj_rf_se)
+
+
+```
+
+
+
+```{r}
+importance(rf_model)
+```
+
+
+```{r}
+varImpPlot(rf_model)
+```
+
+
+
+
+
+
+
+
+#```{r}
+TS1 <- read_csv("test_set_1_revised.csv")
+TS1
+
+
+TS1$ols_predicted_price <- predict(regression, TS1)
+TS1$rf_predicted_price <- predict(rf_model, TS1)
+TS1 <- TS1 %>% mutate(regression_pred  = case_when(
+    `ols_predicted_price` > 1700000 ~ ols_predicted_price*1.4,
+    `ols_predicted_price` > 1500000 ~ ols_predicted_price*1.2,
+    `ols_predicted_price` > 1300000 ~ ols_predicted_price*1.05,
+    `ols_predicted_price` > 1150000 ~ ols_predicted_price*.99,
+    `ols_predicted_price` > 1000000 ~ ols_predicted_price*.98,
+    `ols_predicted_price` > 900000 ~ ols_predicted_price*.92,
+    `ols_predicted_price` < 0 ~ 200000,
+    `ols_predicted_price` < 200000 ~ ols_predicted_price*1.5,
+    `ols_predicted_price` < 500000 ~ ols_predicted_price*.90,
+    `ols_predicted_price` < 900000 ~ ols_predicted_price))
+TS1 <- TS1 %>% mutate(ml_pred = case_when(
+    `rf_predicted_price` > 2750000 ~ rf_predicted_price*1.2,
+    `rf_predicted_price` > 2300000 ~ rf_predicted_price*1.12,
+    `rf_predicted_price` > 2000000 ~ rf_predicted_price*1.1,
+    `rf_predicted_price` > 1500000 ~ rf_predicted_price*1.08,
+    `rf_predicted_price` > 1300000 ~ rf_predicted_price*1.06,
+    `rf_predicted_price` > 1100000 ~ rf_predicted_price*1.06,
+    `rf_predicted_price` > 9000000 ~ rf_predicted_price*1,
+    `rf_predicted_price` < 200000 ~ rf_predicted_price*.87,
+    `rf_predicted_price` < 300000 ~ rf_predicted_price*.93,
+    `rf_predicted_price` < 500000 ~ rf_predicted_price*.95,
+    `rf_predicted_price` < 9000000 ~ rf_predicted_price))
+
+goldblatt_test_set_1_predictionsTS1 <- TS1 %>% select(id,regression_pred,ml_pred)
+goldblatt_test_set_1_predictionsTS1
+
+```
+
+#```{r}
+library(readr)
+
+```
+
+#```{r}
+
+write_csv(goldblatt_test_set_1_predictionsTS1, "goldblatt_test_set_1_predictionsTS1.csv")
+```
+
+
+
+
+
+```{r}
+TS2 <- read_csv("homes_test_set_2_set.csv")
+TS2
+
+```
+
+
+
+
+```{r}
+
+TS2_training_set <- training_set %>% filter(living_area_sqft > 3600,
+                                            lot_sqft>8200,
+                                            construction_and_design_grade >9,
+                                            construction_year > 1950)
+
+                                             
+TS2_training_set
+
+
+summary(TS2_training_set$construction_and_design_grade)
+summary(TS2$construction_and_design_grade)
+
+qplot(TS2_training_set$construction_and_design_grade, geom="histogram") 
+qplot(TS2$construction_and_design_grade, geom="histogram") 
+
+
+```
+
+
+
+```{r}
+TS2_rf <- randomForest(price~ + baths + lot_sqft + has_waterfront_view + unit_condition + floors_above_ground_level_sqft + construction_year + avg_living_area_sqft_of_nearby_neighborhoods + beds + living_area_sqft + living_area_sqft + floors + rating_of_view + construction_and_design_grade + basement_sqft +most_recent_renovation +avg_lot_sqft_of_nearby_neighborhoods, data = TS2_training_set, mtry = 4, ntrees = 200, importance = TRUE)
+```
+
+```{r}
+TS2_training_set$rf_trainied_predicted_price <-predict(TS2_rf, TS2_training_set)
+TS2_training_set
+
+```
+
+```{r}
+TS2_training_set %>% 
+  ggplot(aes(price, rf_trainied_predicted_price)) +
+  geom_point() +
+  geom_abline(slope = 1, color = "red")
+
+
+TS2_training_set <- TS2_training_set %>% mutate(adj_rf_trainied_predicted_price = case_when(
+    `rf_trainied_predicted_price` > 2600000 ~ rf_trainied_predicted_price*1.23,
+    `rf_trainied_predicted_price` > 2100000 ~ rf_trainied_predicted_price*1.16,
+    `rf_trainied_predicted_price` > 1900000 ~ rf_trainied_predicted_price*1.13,
+    `rf_trainied_predicted_price` > 1500000 ~ rf_trainied_predicted_price*1.1,
+    `rf_trainied_predicted_price` > 1300000 ~ rf_trainied_predicted_price*1,
+    `rf_trainied_predicted_price` > 1100000 ~ rf_trainied_predicted_price*.98,
+    `rf_trainied_predicted_price` > 900000 ~ rf_trainied_predicted_price*.95,
+    `rf_trainied_predicted_price` > 750000 ~ rf_trainied_predicted_price*.90,
+    `rf_trainied_predicted_price` < 750000 ~ rf_trainied_predicted_price*.75))
+
+TS2_training_set
+
+TS2_training_set %>% 
+  ggplot(aes(price, adj_rf_trainied_predicted_price)) +
+  geom_point() +
+  geom_abline(slope = 1, color = "red")
+
+```
+
+```{r}
+TS2_training_set <- TS2_training_set %>% mutate(adj_rf_price_diff_prop = abs((adj_rf_trainied_predicted_price - price)/price))
+TS2_training_set <- TS2_training_set %>% mutate(rf_price_diff_prop =  abs((rf_trainied_predicted_price - price)/price))
+
+
+mean(TS2_training_set$rf_price_diff_prop)- mean(TS2_training_set$adj_rf_price_diff_prop)
+
+
+```
+
+
+
+
+```{r}
+
+TS2$pred_not_adjusted <-predict(TS2_rf, TS2)
+TS2 <- TS2 %>% mutate(pred = case_when(
+    `pred_not_adjusted` > 2600000 ~ pred_not_adjusted*1.23,
+    `pred_not_adjusted` > 2100000 ~ pred_not_adjusted*1.16,
+    `pred_not_adjusted` > 1900000 ~ pred_not_adjusted*1.13,
+    `pred_not_adjusted` > 1500000 ~ pred_not_adjusted*1.1,
+    `pred_not_adjusted` > 1300000 ~ pred_not_adjusted*1,
+    `pred_not_adjusted` > 1100000 ~ pred_not_adjusted*.98,
+    `pred_not_adjusted` > 900000 ~ pred_not_adjusted*.95,
+    `pred_not_adjusted` > 750000 ~ pred_not_adjusted*.90,
+    `pred_not_adjusted` < 750000 ~ pred_not_adjusted*.75))
+TS2
+
+```
+
+```{r}
+goldblatt_test_set_2_predictions <- TS2 %>% select(id, pred)
+summary(goldblatt_test_set_2_predictions$pred)
+
+
+write_csv(goldblatt_test_set_2_predictions, "goldblatt_test_set_2_predictions.csv")
+```
+
+
+
+
+# ```{r}
+rf_TS2_model <- randomForest(price~ + baths + lot_sqft + has_waterfront_view + unit_condition + floors_above_ground_level_sqft + construction_year + avg_living_area_sqft_of_nearby_neighborhoods + beds + living_area_sqft + living_area_sqft + floors + rating_of_view + construction_and_design_grade + basement_sqft +most_recent_renovation +avg_lot_sqft_of_nearby_neighborhoods, data = training_set_for_ts2, mtry = 4, ntrees = 200, importance = TRUE)
+
+
+training_set_for_ts2$rf_trainied_predicted_price <-predict(rf_TS2_model, training_set_for_ts2)
+training_set_for_ts2$rf_predicted_price <-predict(rf_model, training_set_for_ts2)
+training_set_for_ts2 <- training_set_for_ts2 %>% mutate(trained_price_diff = abs(rf_trainied_predicted_price - price))
+training_set_for_ts2 <- training_set_for_ts2 %>% mutate(price_diff = abs(rf_predicted_price - price))
+training_set_for_ts2
+
+mean(training_set_for_ts2$trained_price_diff)
+mean(training_set_for_ts2$price_diff)
+
+(mean(training_set_for_ts2$trained_price_diff) - mean(training_set_for_ts2$price))/mean(training_set_for_ts2$price)
+
+(mean(training_set_for_ts2$price_diff) - mean(training_set_for_ts2$price))/mean(training_set_for_ts2$price)
+
+
+
+mean(training_set_for_ts2$price)
+mean(training_set_for_ts2$rf_trainied_predicted_price)
+mean(training_set_for_ts2$rf_predicted_price)
+
+
+
+mean(training_set$beds) - mean(TS1$beds)
+
+mean(training_set$beds) - mean(TS2$beds)
+
+
+mean(training_set$living_area_sqft) - mean(TS1$living_area_sqft)
+mean(training_set$living_area_sqft) - mean(TS2$living_area_sqft)
+
+
+mean(training_set$lot_sqft) - mean(TS1$lot_sqft)
+mean(training_set$lot_sqft) - mean(TS2$lot_sqft)
+
+# 
+
+
+
+
+```
+
+
+
+# ```{r} -->
+
+training_set_for_ts2 %>% 
+  ggplot(aes(price, rf_predicted_price)) +
+  geom_point() +
+  geom_abline(slope = 1)
+
+test_set_results$rf_predicted_price_forTS2 <- predict(rf_TS2_model, training_set)
+test_set_results
+
+
+
+```
+
+

@@ -1,0 +1,405 @@
+---
+title: "ECON 213 - PSET2"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+
+### Part 1 Data Cleaning 
+
+- loaded packages
+- Read avocado CSV data 
+- remove added X1 column 
+- convert column titles to tiles without spaces to minimize future R issues  
+- Changed PLU numbers to continue PLU so R would recognize the column title 
+- Used lubridate to make date elements (Month, Day, Year) their own column 
+- Created new column ("season") that grouped months together based on which season they occur 
+  - For temoral analysis to understand supply and price trends over time 
+- created avocados_region which filters for groupings of states based on geography 
+  - for spatial analysis to see pricing differences
+- For calculating the Elasticity of Supply, columns were added to the time series
+  prepared dataframe for percent change in quantity over last period and percent
+  change in price over last period. This was made in order to best estimate 
+  how the market of avocados changed over time, specificially looking at quantity
+  and price. 
+  
+-Calculating the elasticity of demand entailed narrowing in on a certain, demand
+driven event. I filtered for the witer months of January and February where there
+was unlikey to be a supply side shift due to climate. From here, I could 
+calculate the response between change in quantity and change in price during 
+this event. 
+
+
+```{r echo= FALSE}
+library(ggplot2) ## plots stuff
+library(tidyverse) ## data transformation
+library(lubridate) 
+library(dplyr)##
+library(patchwork) # To display 2 charts together
+library(hrbrthemes)
+
+```
+
+
+```{r  echo= FALSE}
+avocados <- read_csv("avocado.csv")
+
+```
+
+```{r echo = FALSE}
+avocado <-
+  avocados %>% 
+  select(-X1) %>% 
+  rename(
+    date = Date,
+    plu4046 = `4046`,
+    plu4225 = `4225`,
+    plu4770 = `4770`,
+    avg_price = AveragePrice,
+    total_volume = `Total Volume`,
+    total_bags = `Total Bags`,
+    small_bags = `Small Bags`,
+    large_bags = `Large Bags`,
+    xl_bags = `XLarge Bags`
+    ) %>% 
+  mutate(date = ymd(date))
+
+
+avocados_season <- avocado %>% 
+  mutate(
+    year = year(date),
+    month = month(date),
+    day = day(date), 
+    season = case_when(
+      month %in% c(12, 1, 2) ~ "Winter",
+      month %in% c(3, 4, 5) ~ "Spring",
+      month %in% c(6, 7, 8) ~ "Summer",
+      month %in% c(9, 10, 11) ~ "Fall"
+    ))
+
+
+avocados_region <- avocado %>% filter(region == c('Midsouth','NorthernNewEngland', "SouthCentral","Southeast","West","WestTexNewMexico","Northeast"))
+
+
+conventional <- avocados_season %>% filter(type == "conventional") 
+con_mean <- mean(conventional$avg_price)
+
+
+organic <- avocados_season %>% filter(type == "organic") 
+org_mean <- mean(organic$avg_price)
+
+
+```
+
+
+
+## Avocado Market - regional price differences 
+
+In understanding the regional price differences, we look at the 7 aggregations 
+provided in the original data and look at distribution of prices for both 
+organic and conventional avocados. We see that the majority of conventional 
+avocados in South Central, West, and TexNewMexico are at the lower price points.
+Histograms for the same types of avocados across different regions are not 
+centered at the same point. Avocado prices are priced at market rates for the 
+geographic area and not at a national level. 
+
+```{r echo = FALSE}
+
+avocados_region  %>% 
+  ggplot(aes(`avg_price`, color=type)) +
+  geom_histogram(binwidth = .1, fill="white") +
+  ggtitle("average price of avocados by region, subsetted by type") +
+  facet_grid(rows = "region")
+
+
+```
+
+## Avocado Market - type price differences 
+
+Organic produce tends to be sold at a higher cost and at lower volumes. The 
+histogram shows the distribution of each type. Additionally counts of each type
+confirm that conventional avocados sell at much higher volumes and make up a 
+larger portion of the avocado market. This observation will be important when 
+calculating the adjusted weighted average of price in the avocado market. 
+
+```{r echo= FALSE}
+ggplot(avocados_region, aes(x=avg_price, color=type)) +
+  geom_histogram(fill="white" ,position="dodge")+
+  theme(legend.position="top")+
+ geom_density(alpha=.2, fill="#FF6666")+ 
+  geom_vline(xintercept = con_mean, linetype="dashed", 
+                color = "red", size=1)+ 
+  geom_vline(xintercept = org_mean, linetype="dashed", 
+                color = "blue", size=1)
+
+```
+
+## Avocado Market - Seasonal Price
+
+The figure below shows the the disribution of price based on the seasons. 
+Avocados are grown seasonally and as such, out-of-season produce often ends up
+being priced differently than in-season produce. Produce quality also potentially 
+suffers seasonally so pricing is taken into account of the poorer quality. 
+Spring and winter price distributions appear to be less than the mean, meaning 
+that the avocado, on average, purchased during these seasons, will be less 
+expensive than summer and fall avocados. 
+
+
+
+```{r echo=FALSE}
+
+
+m1 <- avocados_season %>% 
+  filter(`type` == "conventional") %>% 
+  ggplot(aes(`avg_price`)) +
+  geom_histogram(binwidth = .08) +
+  ggtitle("Seasonal price - Conventional") +
+  facet_grid(rows = "season")+
+  geom_vline(aes(xintercept=median(avg_price)),
+            color="navy", linetype="solid", size=1)
+
+m2 <- avocados_season %>% 
+  filter(`type` == "organic") %>% 
+  ggplot(aes(`avg_price`)) +
+  geom_histogram(binwidth = .08) +
+  ggtitle("Seasonal price - organic") +
+  facet_grid(rows = "season")+
+  geom_vline(aes(xintercept=median(avg_price)),
+            color="darkgreen", linetype="solid", size=1)
+
+
+m1 + m2
+
+```
+
+ 
+ 
+
+### Part 3
+## time series 
+
+```{r echo= FALSE}
+
+time_series_group <- merge(organic, conventional, by = c("date", "region")) %>% 
+  filter(region != "TotalUS" )
+
+time_series_group <- time_series_group %>%
+  add_column(adj_price = (time_series_group$total_volume.x* time_series_group$avg_price.x +
+                            time_series_group$total_volume.y* time_series_group$avg_price.y)/
+               (time_series_group$total_volume.x+time_series_group$total_volume.y)) %>% 
+  add_column(total_volume = (time_series_group$total_volume.x+time_series_group$total_volume.y))
+time_series_group <- time_series_group %>% group_by(date) %>%  summarise(price = mean(adj_price), volume = mean(total_volume))
+
+ts_reg <- lm(log(volume)~log(price), data = time_series_group)
+summary(ts_reg)
+
+ggplot(time_series_group, aes(x=log(volume)))+
+  geom_point(aes(y = log(price)))
+ 
+```
+The time series log yields a coefficient estimate of -0.61305 with a standard 
+error of .08337. This shows that there is a negative correlation between price 
+and and volume. As the volume decreases, the price goes up and vice versa for 
+increases in volume. For economic interpretation of this correlation, when the 
+market is flooded with avocados, the price is lower because supply is high, and a 
+shift in the supply and demand equilibrium occurs. Time series variation is likely 
+a better estimate of supply side. This is because quantity supply shifts as 
+producers are able to grow a varying amount based on climate conditions and 
+dictates how many avocados can be supplied. 
+
+## cross sectional series 
+
+```{r echo = FALSE}
+cross_sectional <- merge(organic, conventional, by = c("date", "region"))%>% 
+  filter(region != "TotalUS" )
+cross_sectional<- cross_sectional %>% 
+  add_column(adj_price = (cross_sectional$total_volume.x* cross_sectional$avg_price.x +
+                            cross_sectional$total_volume.y* cross_sectional$avg_price.y)/
+               (cross_sectional$total_volume.x+cross_sectional$total_volume.y)) %>% 
+  add_column(total_volume = (cross_sectional$total_volume.x+cross_sectional$total_volume.y))
+
+
+cross_sectional_group <- cross_sectional %>% group_by(region) %>%  summarise(price = mean(adj_price), volume = mean(total_volume))
+
+CS_reg <- lm(log(volume)~log(price), data = cross_sectional_group)
+summary(CS_reg)
+
+ggplot(cross_sectional_group, aes(x=log(volume)))+
+  geom_point(aes(y = log(price)))
+
+```
+The cross sectional regression yields a coefficient of  -2.2287 with a standard
+error of 1.0887. This shows that the price and quantity differs much more than 
+time series as the coefficient is larger than that of the time series regression. 
+When understanding the meaning of this coefficient, the more avocados sold, the
+cheaper the price would be and across different regions, this change was quite
+significant. The economic parameters that people would care about is that 
+avocados distributed to different areas will affect the sale price and the higher 
+the quantity delivered to those areas, on average, will reduce the sale price 
+of the avocados. This is more driven by demand side factors as transportation 
+around the US is relatively inexpensive so each area can, given a sufficient 
+supply, provide enough avocados to meet the demand of the given area. 
+
+
+
+
+## panel data regressions
+```{r echo=FALSE}
+panel <- merge(organic, conventional, by = c("date", "region"))%>% 
+  filter(region != "TotalUS" )
+
+panel<- panel %>% 
+  add_column(adj_price = (panel$total_volume.x* panel$avg_price.x +
+                           panel$total_volume.y* panel$avg_price.y)/
+               (panel$total_volume.x+panel$total_volume.y)) %>% 
+  add_column(total_volume = (panel$total_volume.x+panel$total_volume.y))
+
+panel_reg <- lm(log(total_volume)~log(adj_price), data = panel)
+summary(panel_reg)
+
+```
+In the panel regressions, the regression yielded a coefficient estimate of 
+-1.34325 with a standard error of 0.05436. This fell between the coefficients 
+of time series regression and cross section regression. This shows that an 
+adjusted average of how the avocado market prices adjust with the change in 
+avocado quantity. The economic parameters that people should care about from this
+regression is that the price in avocados does change based on the quantity 
+supplied for both supply and demand side reasons. Since this coefficient is 
+closer to that of the cross series, demand side may play more of a factor on the
+change in price and quantity of the avocados. 
+
+
+
+### Part 4 - Elasticity of Supply
+
+```{r echo = FALSE}
+supply_elasticity <-time_series_group %>% 
+  arrange(date) %>% 
+  mutate(
+    avg_price_prevdate = lag(price),
+    price_delta = price - avg_price_prevdate,
+    abs_value_price_delta = abs(price_delta),
+    perc_price_change = (price -avg_price_prevdate)/avg_price_prevdate *100
+    ) %>% 
+  mutate(
+    avg_vol_prevdate = lag(volume),
+    vol_delta = volume - avg_vol_prevdate,
+    abs_value_vol_delta = abs(vol_delta), 
+    perc_vol_change = (volume - avg_vol_prevdate)/avg_vol_prevdate *100
+    )
+  #arrange(desc(abs_value_price_delta))
+
+supply_elasticity_reg <- lm(perc_price_change~perc_vol_change,data = supply_elasticity)
+summary(supply_elasticity_reg)
+
+ggplot(supply_elasticity_reg, aes(x=perc_price_change))+
+  geom_point(aes(y = perc_vol_change))+
+  ggtitle("Supply Elasticity of Avocados - % change of quantity and price")
+
+
+
+
+
+
+```
+
+For understanding the elasticity of supply, I have applied the data set 
+constructed for the time series regression as it covers how the supply of 
+avocados change over time. Columns were added to find the % quantity change from 
+previous date and % price change from previous dates to show how the change in
+supply would affect the quantity and supply of avocados. The coefficient produced
+by this regression is -0.37159. This means that there is some change in the 
+quantity supplied based on price changes. The standard error band that I would 
+give would be more than the regressions of 0.01736. The justification for the 
+error band being greater than the regressions is that more factors affect the 
+supply of avocados than just yearly climate trends. The graph shows the negative 
+correlation between % change in volume and the % change in price, demonstrating 
+to the department of agriculture how changes in supply affect these factors. 
+
+
+
+### Part 5 - Elasticity of Demand
+
+
+```{r echo = FALSE}
+temperatureColor <- "#69b3a2"
+priceColor <- rgb(0.2, 0.6, 0.9, 1)
+
+demand_elasticity <-time_series_group %>% 
+  mutate(
+    year = year(date),
+    month = month(date),
+    day = day(date))%>%  filter(year == 2017, month >= 1, month < 3) %>% arrange(date) %>% mutate(
+    avg_price_prevdate = lag(price),
+    price_delta = price - avg_price_prevdate,
+    abs_value_price_delta = abs(price_delta),
+    perc_price_change = (price -avg_price_prevdate)/avg_price_prevdate *100
+    ) %>% 
+  mutate(
+    avg_vol_prevdate = lag(volume),
+    vol_delta = volume - avg_vol_prevdate,
+    abs_value_vol_delta = abs(vol_delta), 
+    perc_vol_change = (volume - avg_vol_prevdate)/avg_vol_prevdate *100
+    )
+
+
+ggplot(demand_elasticity, aes(x=perc_price_change))+
+  geom_point(aes(y = perc_vol_change))
+
+
+
+p1 <- demand_elasticity %>% 
+  ggplot(aes(date, volume)) +
+  geom_line(size=2, color=priceColor) 
+p2 <- demand_elasticity %>% 
+  ggplot(aes(date, price)) +
+  geom_line(size=2, color=temperatureColor) 
+
+demand_elasticity_reg <- lm(perc_price_change~perc_vol_change,data = demand_elasticity)
+summary(demand_elasticity_reg)
+
+
+p1  +
+  ggtitle("# of avocados sold in Jan/Feb")+ 
+  p2 +
+  ggtitle("Price of avocados in Jan/Feb")
+
+
+```
+Given that the data supplied, there were no columns for avocados supplied and/or
+avocados not sold that could contribute to calculating the elasticity of demand. 
+Because of this, a natural experiment in the data could lead to an example of 
+elasticity of demand. Looking at the trends in the data, there consistently is a
+spike of avocados purchased in early February, which coincides with the 
+super bowl. Google reveals that avocado demand spikes during this time because 
+of this event. As such, this is a good natural experiment to determine the 
+elasticity of demand. The regression yielded a coefficient estimate of -0.39907
+and a standard error of 0.06323. Again, I believe that this standard error should
+be greater than the given one because there are many factors that could impact
+the demand side, in addition to the early Feb spike. The graphic produced for the
+department of agriculture shows that, in early february, there is a giant spike 
+for folume and simultaneously, there is a drop in price. 
+
+### Part 6 - in line with elasticity of demand and supply
+
+
+### Part 7 - Recommendations for further data collection
+
+Overall, the data collected greatly presents it self as demand side data. It only
+contains values for quantity sold which, theoretically, is at the equilibrium of 
+supply and demand. More data collection could help assist understanding the 
+efficiency of the market by providing data on how many avocados are supplied. 
+This could take the form of farmers keeping track of how much they produce or 
+it could also be tracked by how many avocados are not sold on the sellers/grocery
+store's side of the supply chain. This would be beneficial as the time series
+isn't a prefect representation of the supply. Now days, global transportation is 
+cheap and freezing produce to be used in the off-season is common practice. As 
+such, time series fails to recognize these effects in the supply of avocados. 
+
+
+
+
+
+
+
